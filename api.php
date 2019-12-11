@@ -2,7 +2,7 @@
     require "./vendor/simple_html_dom.php";
     header('Content-Type: application/json');
     $version = "1.0";
-    $useragent = "Auto/2019.1";
+    $useragent = $_SERVER['HTTP_USER_AGENT'];
     $referer = "https://family.axioscloud.it/Secret/REDefault.aspx?Customer_ID=91032760067&Customer_Producer=Axios&Customer_Title=ISTITUTO ISTRUZIONE SUPERIORE&Customer_Name=I.T.I. A. SOBRERO&Customer_WebSite=https://family.sissiweb.it/Secret/REStart.aspx?Customer_ID=91032760067&Customer_Demo=False&Customer_Active=True&Customer_IDC=7.0.0&Customer_C=False&Customer_C64=False&Ticket=de1b087f96155adb5de301ccc940d28f&DBIDX=CLOUD_RE_03&Type=RE";
     
     $refererEncoded = str_replace(" ", "%20", $referer);
@@ -197,12 +197,12 @@
                 $argobj = explode(": ", $arg);
                 $argomento["materia"] = $argobj[0];
                 $argomento["descrizione"] = $argobj[1];
-                array_push($argomenti, $argomento);
+                if (strlen($argobj[1]) > 0) array_push($argomenti, $argomento);
             }
             foreach($listaCompiti as $arg){
                 $argobj = explode(": ", $arg);
                 $compito["materia"] = $argobj[0];
-                $compito["compito"] = $argobj[1];
+                $compito["compito"] = addslashes($argobj[1]);
                 $compito["data"] = $data;
                 if (strlen($argobj[0]) > 0) array_push($compiti, $compito);
             }
@@ -221,11 +221,41 @@
             $votoTemp["materia"] = mb_convert_case($contenuti[1]->plaintext, MB_CASE_TITLE, "UTF-8");
             $votoTemp["tipologia"]  = $contenuti[2]->plaintext;
             $votoTemp["voto"] = trim($contenuti[3]->plaintext);
-            $votoTemp["commento"] = $contenuti[5]->plaintext;
+            $votoTemp["commento"] = addslashes($contenuti[5]->plaintext);
             $votoTemp["docente"] = $contenuti[6]->plaintext;
-            if (strlen($votoTemp["voto"]) > 0) array_push($reDocente, $votoTemp);
+            if (strlen($votoTemp["voto"]) > 0 && is_numeric(str_replace(",", ".", $votoTemp["voto"]))) array_push($reDocente, $votoTemp);
         }
-
+        $response = requestREFamily($response, "Assenze");
+        $html = str_get_html($response);
+        $objAssenzeNG = $html->find('.table-responsive tbody')[0]->find('tr');
+        $objAssenzeG = $html->find('.table-responsive tbody')[1]->find('tr');
+        $assenzeNG = array();
+        $assenzeG = array();
+        foreach ($objAssenzeNG as $assenzaN){
+        	$contenuti = $assenzaN->find("td");
+        	$temp1 = explode('(', $contenuti[1]->plaintext)[1];
+        	$motivazione = explode(')', $temp1)[0];
+        	$temp2 = explode('[', $contenuti[1]->plaintext)[1];
+        	$orario = explode(']', $temp2)[0];
+            $assenzaNT["data"] = $contenuti[0]->plaintext;
+            $assenzaNT["motivazione"] = $motivazione;
+            $assenzaNT["tipologia"] = explode(" ", $contenuti[1]->plaintext)[0];
+            $assenzaNT["orario"] = $orario;
+ 			array_push($assenzeNG, $assenzaNT);
+        }
+        
+        foreach ($objAssenzeG as $assenzaG){
+            $contenuti = $assenzaG->find("td");
+        	$temp1 = explode('(', $contenuti[1]->plaintext)[1];
+        	$motivazione = explode(')', $temp1)[0];
+        	$temp2 = explode('[', $contenuti[1]->plaintext)[1];
+        	$orario = explode(']', $temp2)[0];
+            $assenzaGT["data"] = $contenuti[0]->plaintext;
+            $assenzaGT["motivazione"] = $motivazione;
+            $assenzaGT["tipologia"] = explode(" ", $contenuti[1]->plaintext)[0];
+            $assenzaGT["orario"] = $orario;
+ 			array_push($assenzeG, $assenzaGT);
+        }
         $curl = curl_init("https://family.axioscloud.it/Secret/APP_Ajax_Get.aspx?Action=READ_COMUNICAZIONI_FAMILY&Others=0");
         curl_setopt($curl, CURLOPT_RETURNTRANSFER, 1);
         curl_setopt($curl, CURLOPT_HEADER, 1);
@@ -241,10 +271,10 @@
             $contenuti = $comunicazione->find("td");
             $commTemp["data"] = $contenuti[0]->plaintext;
             $commTemp["mittente"] = $contenuti[1]->plaintext;
-            $commTemp["contenuto"] = $contenuti[2]->plaintext;      
+            $commTemp["contenuto"] = addslashes($contenuti[2]->plaintext);      
             array_push($comunicazioni, $commTemp);      
         }
-
+        
         $utenteHead["matricola"] = $username;
         $utenteHead["nome"] = $nome;
         $utenteHead["cognome"] = $cognome;
@@ -267,11 +297,16 @@
             "regclasse" => $reClasse,
             "comunicazioni" => $comunicazioni,
             "voti" => $reDocente,
-            "compiti" => $compiti
+            "compiti" => $compiti,
+            "assenze" => array(
+            	"nongiustificate" => $assenzeNG,
+                "giustificate" => $assenzeG,
+            ),
         ];
         http_response_code(200);
-        $tempString = json_encode($finalResponse);
-        echo html_entity_decode($tempString, ENT_QUOTES);
+        $tempString = json_encode($finalResponse, JSON_HEX_APOS|JSON_HEX_QUOT);
+        //echo html_entity_decode($tempString, ENT_QUOTES);
+        echo str_replace("&quot;", '\"', $tempString);
         
     }
 
